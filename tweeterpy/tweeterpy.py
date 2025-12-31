@@ -3,6 +3,7 @@ import random
 import getpass
 import logging.config
 import curl_cffi
+from datetime import datetime
 from functools import reduce
 from typing import Union, Dict
 from x_client_transaction import ClientTransaction
@@ -58,7 +59,7 @@ class TweeterPy:
             ApiUpdater(request_client=self.request_client,
                        restore_cache=restore_cache)
         except Exception as error:
-            logger.warn(error)
+            logger.warning(error)
         self.request_client.session.headers.update({"Authorization": token})
 
     def _generate_request_data(self, endpoint, variables=None, **kwargs):
@@ -88,7 +89,7 @@ class TweeterPy:
             return filtered_data
 
         if not pagination and total:
-            logger.warn("Either enable the pagination or disable total number of results.")
+            logger.warning("Either enable the pagination or disable total number of results.")
             raise Exception("pagination cannot be disabled while the total number of results are specified.")
         data_container = {"data": [],"cursor_endpoint": None, "has_next_page": True, "api_rate_limit": None}
         while data_container["has_next_page"]:
@@ -166,7 +167,7 @@ class TweeterPy:
     def login_decorator(original_function):
         def wrapper(self, *args, **kwargs):
             if not self.logged_in():
-                logger.warn('User is not authenticated.')
+                logger.warning('User is not authenticated.')
                 self.login()
             return original_function(self, *args, **kwargs)
         return wrapper
@@ -230,7 +231,10 @@ class TweeterPy:
         if session is None:
             session = self.request_client.session
         if session_name is None:
-            session_name = self.me['data']['viewer']['user_results']['result']['legacy']['screen_name']
+            try:
+                session_name = self.me['data']['viewer']['user_results']['result']['core']['screen_name']
+            except (KeyError, TypeError):
+                session_name = datetime.now().isoformat()
         return save_session(filename=session_name, path=path, session=session)
 
     def load_session(self, path=None):
@@ -286,7 +290,7 @@ class TweeterPy:
             if username:
                 print(f"Welcome {username} : Successfully Logged In.")
         except Exception as error:
-            logger.warn(error)
+            logger.warning(error)
 
     def get_user_id(self, username):
         """Get user ID of a twitter user.
