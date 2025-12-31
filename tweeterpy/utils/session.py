@@ -1,68 +1,86 @@
-import os
 import pickle
+from pathlib import Path
+from typing import Any, List
 import logging.config
 from curl_cffi.requests.session import Session
-from tweeterpy.constants import DEFAULT_SESSION_DIRECTORY, LOGGING_CONFIG
+from tweeterpy.constants import LOGGING_CONFIG
 
 logging.config.dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
 
 
-def _create_session_directory(directory_path=None):
-    if directory_path is None:
-        directory_path = DEFAULT_SESSION_DIRECTORY
-
-    directory_path = os.path.realpath(os.path.expanduser(directory_path))
-    os.makedirs(directory_path, exist_ok=True)
-    return directory_path
-
-
-def _show_saved_sessions(directory_path=None):
-    if directory_path is None:
-        directory_path = _create_session_directory()
-    all_files = os.listdir(directory_path)
-    session_files = [f"{count}. {os.path.splitext(file)[0]}" for count, file in enumerate(
-        all_files, start=1) if file.endswith(".pkl")]
-    print("\n".join(session_files))
-    file_number = int(
-        input("\nChoose a Number to Load an Exising Session : ").strip())
-    while file_number >= len(all_files)+1 or file_number == 0:
-        file_number = int(input("\nChoose a vaild Number : ").strip())
-    else:
-        file_path = os.path.join(directory_path, all_files[file_number-1])
-    return file_path
-
-
-def save_session(filename=None, path=None, session=None):
-    if session is None:
-        raise NameError("name 'session' is not defined.")
+def save_session(file_path: Path, session: Session) -> Path:
+    """
+    Save session headers and cookies to a file.
+    
+    This function serializes session headers and cookies using pickle
+    to preserve all attributes and data structures. The parent directory
+    will be created if it doesn't exist.
+    
+    Args:
+        file_path (Path): Path where to save the session file.
+        session (Session): The curl_cffi Session object to save.
+    
+    Returns:
+        Path: The path to the saved session file.
+    
+    Raises:
+        TypeError: If session is not a valid Session object.
+    """
+    # 验证会话对象类型
     if not isinstance(session, Session):
         raise TypeError(
             f"Invalid session type. {session} is not a requests.Session Object...")
-    if filename is None:
-        filename = str(
-            input("Enter Username/Account Name to Save the Session : ")).strip()
-    if path is None:
-        path = _create_session_directory()
-    filename = f"{filename}.pkl"
-    file_path = os.path.join(path, filename)
-    with open(file_path, "wb") as file:
-        pickle.dump([session.headers, session.cookies], file)
+    
+    # 确保父目录存在
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # 使用pickle序列化headers和cookies的内部属性
+    session_data: List[Any] = [
+        dict(session.headers),
+        session.cookies.jar._cookies
+    ]
+    
+    # 将会话数据写入文件，使用二进制模式
+    with file_path.open("wb") as file:
+        pickle.dump(session_data, file)
+    
     return file_path
 
 
-def load_session(path=None, session=None):
-    if session is None:
-        raise NameError("name 'session' is not defined.")
+def load_session(file_path: Path, session: Session) -> Session:
+    """
+    Load session headers and cookies from a file.
+    
+    This function reads a session file and restores the headers and
+    cookies to the provided session object using pickle to preserve
+    all attributes and data structures.
+    
+    Args:
+        file_path (Path): Path to the session file to load.
+        session (Session): The curl_cffi Session object to restore.
+    
+    Returns:
+        Session: The session object with restored headers and cookies.
+    
+    Raises:
+        FileNotFoundError: If the session file doesn't exist.
+        TypeError: If session is not a valid Session object.
+    """
+    # 验证会话对象类型
     if not isinstance(session, Session):
         raise TypeError(
             f"Invalid session type. {session} is not a requests.Session Object...")
-    if path is None:
-        path = _show_saved_sessions()
-    with open(path, "rb") as file:
-        headers, cookies = pickle.load(file)
-    session.headers = headers
-    session.cookies = cookies
+    
+    # 使用pickle读取文件并解析会话数据
+    with file_path.open("rb") as file:
+        session_data: List[Any] = pickle.load(file)
+    
+    # 恢复会话headers
+    session.headers = session_data[0]  # type: ignore
+    # 从pickle数据恢复cookies的内部属性
+    session.cookies.jar._cookies.update(session_data[1])  # type: ignore
+    
     return session
 
 
